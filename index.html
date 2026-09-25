@@ -104,8 +104,12 @@
   .recstat.live{color:var(--fg)}
   .recstat.live::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b3b;margin-right:6px;animation:pulse 1s infinite}
   @keyframes pulse{50%{opacity:.25}}
-  .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);width:66px;height:88px;object-fit:cover;
-    border-radius:10px;border:2px solid #fff;background:#000;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+  .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);height:auto;max-height:52vh;object-fit:contain;
+    border-radius:12px;border:3px solid #fff;background:#000;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.45);
+    transition:width .2s ease}
+  .preview[data-size="s"]{width:34vw;max-width:170px}
+  .preview[data-size="l"]{width:calc(100vw - 24px);max-width:616px}
+  @media (prefers-reduced-motion: reduce){.preview{transition:none}}
 
   /* 操作系 */
   .go{appearance:none;border:0;flex:0 0 29%;min-height:140px;border-radius:24px;background:var(--btn-bg);color:var(--btn-fg);
@@ -172,7 +176,7 @@
   <button class="reset" id="reset"><span id="resetLabel">RESET（1秒長押し）</span></button>
 </div>
 
-<video class="preview" id="preview" muted playsinline autoplay hidden></video>
+<video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
 <div class="flash" id="flash"></div>
 <div class="toast" id="toast" hidden></div>
 
@@ -363,7 +367,8 @@
     try {
       try { rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio:true }); }
       catch(e){ rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false }); }
-      el.preview.srcObject = rec.stream; el.preview.hidden = false;
+      el.preview.srcObject = rec.stream; el.preview.dataset.size = 'l'; el.preview.hidden = false;
+      toast('画角を合わせたらプレビューをタップ（小さく → 隠す）');
       rec.on = true; setRecUI();
       if (state === 'running' || state === 'paused') recStart();
     } catch(e){
@@ -412,8 +417,12 @@
   });
   el.closeSheet.addEventListener('click', () => { el.sheet.hidden = true; });
   el.recBtn.addEventListener('click', () => { rec.on ? recDisable() : recEnable(); });
-  el.preview.addEventListener('click', () => { el.preview.hidden = true; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); });
-  el.recStat.addEventListener('click', () => { if (rec.stream) el.preview.hidden = false; });
+  // プレビュー：タップで 小 → 大 → 非表示 → 小 …
+  el.preview.addEventListener('click', () => {
+    if (el.preview.dataset.size === 's'){ el.preview.dataset.size = 'l'; toast('大きく表示中。もう一度タップで隠す'); }
+    else { el.preview.hidden = true; el.preview.dataset.size = 's'; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); }
+  });
+  el.recStat.addEventListener('click', () => { if (rec.stream){ el.preview.dataset.size = 's'; el.preview.hidden = false; } });
 
   // ---------- 起動 ----------
   buildBar(); setRecUI(); render();
