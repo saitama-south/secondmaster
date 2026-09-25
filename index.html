@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);box-sizing:border-box}
+  *,*::before,*::after{box-sizing:inherit}
+  html{height:100%}
+  body{margin:0;font-size:14px}
+  [hidden]{display:none!important}
+</style>
+<title>SecondMaster</title>
+<meta name="theme-color" content="#14161b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Dela+Gothic+One&family=M+PLUS+1p:wght@500;700;800&display=swap">
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#14161b; --fg:#f4f5f7; --muted:rgba(244,245,247,.66);
+    --line:rgba(255,255,255,.22); --chip:rgba(0,0,0,.26);
+    --btn-bg:#f4f5f7; --btn-fg:#14161b;
+    --c-blue:#1c4fd6; --c-green:#0f8a48; --c-yellow:#f4b000; --c-orange:#ee6a10; --c-red:#d3172a;
+  }
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:"M PLUS 1p","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+    overflow:hidden; -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+    transition:background-color .2s linear;
+  }
+  body[data-c="blue"]  {--bg:var(--c-blue)}
+  body[data-c="green"] {--bg:var(--c-green)}
+  body[data-c="yellow"]{--bg:var(--c-yellow); --fg:#1a1200; --muted:rgba(26,18,0,.72); --line:rgba(0,0,0,.25); --chip:rgba(0,0,0,.12)}
+  body[data-c="orange"]{--bg:var(--c-orange)}
+  body[data-c="red"]   {--bg:var(--c-red)}
+  body[data-c="done"]  {--bg:#07080a}
+  body[data-run="1"]{--btn-bg:rgba(0,0,0,.34); --btn-fg:#fff}
+  body[data-c="yellow"][data-run="1"]{--btn-bg:rgba(0,0,0,.82); --btn-fg:#f4b000}
+
+  /* 赤フェーズの点滅 */
+  body::before{content:"";position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:0}
+  body[data-c="red"][data-run="1"]::before{animation:blink .9s steps(2,jump-none) infinite}
+  @keyframes blink{0%{opacity:0}100%{opacity:.38}}
+  /* 一時停止中のストライプ */
+  body[data-paused="1"]::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:repeating-linear-gradient(-45deg,rgba(0,0,0,.18) 0 18px,transparent 18px 36px)}
+  @media (prefers-reduced-motion: reduce){ body[data-c="red"][data-run="1"]::before{animation:none;opacity:.12} }
+
+  .app{position:relative;z-index:1;height:100%;box-sizing:border-box;display:flex;flex-direction:column;
+    gap:10px;padding-inline:16px;padding-block:10px 12px;max-width:640px;margin-inline:auto}
+
+  /* モード切替 */
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--chip);padding:5px;border-radius:14px}
+  .tab{appearance:none;border:0;border-radius:10px;background:transparent;color:var(--fg);
+    font:inherit;font-weight:800;font-size:15px;line-height:1.1;padding-block:9px;cursor:pointer}
+  .tab small{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:14px;opacity:.75;letter-spacing:.04em}
+  .tab[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+  .tabs.locked .tab:not([aria-pressed="true"]){opacity:.35}
+  .tab:focus-visible,.btn:focus-visible,.go:focus-visible,.reset:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
+
+  /* タイマー */
+  .clockwrap{text-align:center;position:relative}
+  .clock{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-variant-numeric:tabular-nums;
+    font-size:clamp(88px,31vw,190px);line-height:.86;letter-spacing:-.01em}
+  .remain{font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:600;font-variant-numeric:tabular-nums;
+    font-size:clamp(22px,7vw,34px);color:var(--muted);margin-top:2px}
+  .remain b{color:var(--fg);font-weight:700}
+  .badge{position:absolute;left:0;top:0;font-size:12px;font-weight:800;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:var(--fg);color:var(--bg)}
+
+  /* フェーズ進行バー */
+  .bar{position:relative;display:flex;height:14px;border-radius:7px;overflow:hidden;border:2px solid var(--line)}
+  .seg{height:100%;position:relative}
+  .seg+.seg{border-left:2px solid rgba(0,0,0,.35)}
+  .seg[data-c="blue"]{background:var(--c-blue)} .seg[data-c="green"]{background:var(--c-green)}
+  .seg[data-c="yellow"]{background:var(--c-yellow)} .seg[data-c="orange"]{background:var(--c-orange)} .seg[data-c="red"]{background:var(--c-red)}
+  .marker{position:absolute;top:-2px;bottom:-2px;width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 0 2px #000;left:0}
+  .ticks{display:flex;justify-content:space-between;font-family:"Barlow Condensed",sans-serif;font-size:13px;color:var(--muted);
+    font-variant-numeric:tabular-nums;margin-top:3px;position:relative;height:14px}
+  .ticks span{position:absolute;transform:translateX(-50%)}
+  .ticks span:first-child{transform:none} .ticks span:last-child{transform:translateX(-100%)}
+
+  /* フェーズ＆コール */
+  .stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;cursor:pointer}
+  .phase{font-family:"Dela Gothic One","M PLUS 1p",sans-serif;font-size:clamp(46px,15vw,96px);line-height:1.1;
+    text-wrap:balance;word-break:keep-all;overflow-wrap:anywhere}
+  .phase.small{font-size:clamp(28px,9vw,52px)}
+  .act{font-size:clamp(13px,3.8vw,16px);color:var(--muted);font-weight:700}
+
+  /* 録画 */
+  .recrow{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px}
+  .btn{appearance:none;font:inherit;font-weight:700;font-size:14px;color:var(--fg);background:var(--chip);
+    border:2px solid var(--line);border-radius:999px;padding:7px 14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .btn .sq{width:10px;height:10px;border-radius:2px;background:currentColor;opacity:.5}
+  .btn[aria-pressed="true"] .sq{background:#ff3b3b;opacity:1;border-radius:50%}
+  .recstat{font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+  .recstat.live{color:var(--fg)}
+  .recstat.live::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b3b;margin-right:6px;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);width:66px;height:88px;object-fit:cover;
+    border-radius:10px;border:2px solid #fff;background:#000;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+
+  /* 操作系 */
+  .go{appearance:none;border:0;flex:0 0 29%;min-height:140px;border-radius:24px;background:var(--btn-bg);color:var(--btn-fg);
+    font-family:"Barlow Condensed","Arial Narrow",sans-serif;font-weight:700;font-size:clamp(52px,16vw,92px);letter-spacing:.04em;line-height:1;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;
+    box-shadow:0 6px 0 rgba(0,0,0,.35);transition:transform .06s}
+  .go:active{transform:translateY(3px);box-shadow:0 3px 0 rgba(0,0,0,.35)}
+  .go small{font-family:"M PLUS 1p",sans-serif;font-size:15px;font-weight:700;letter-spacing:.06em;opacity:.8}
+  .reset{appearance:none;position:relative;overflow:hidden;height:50px;border-radius:14px;border:2px solid var(--line);
+    background:var(--chip);color:var(--fg);font:inherit;font-weight:800;font-size:16px;letter-spacing:.06em;cursor:pointer}
+  .reset span{position:relative;z-index:1}
+  .reset::after{content:"";position:absolute;inset:0;background:var(--fg);opacity:.35;transform:scaleX(0);transform-origin:left}
+  .reset.hold::after{transform:scaleX(1);transition:transform 1s linear}
+
+  .flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:4}
+  .flash.go-flash{animation:fl .45s ease-out}
+  @keyframes fl{0%{opacity:.75}100%{opacity:0}}
+
+  /* 保存シート */
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#1d2027;color:#f4f5f7;border-radius:20px 20px 0 0;
+    padding-inline:20px;padding-block:18px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 30px rgba(0,0,0,.5);
+    display:flex;flex-direction:column;gap:12px;max-width:640px;margin-inline:auto}
+  .sheet h2{margin:0;font-size:18px}
+  .sheet p{margin:0;font-size:13px;color:rgba(244,245,247,.7)}
+  .sheet .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sheet a,.sheet button{appearance:none;font:inherit;font-weight:800;font-size:15px;text-align:center;text-decoration:none;
+    padding-block:14px;border-radius:12px;border:0;cursor:pointer;background:#f4f5f7;color:#14161b}
+  .sheet .ghost{background:transparent;color:#f4f5f7;border:2px solid rgba(255,255,255,.25)}
+  .toast{position:fixed;left:50%;bottom:calc(34% + 8px);transform:translateX(-50%);z-index:9;background:rgba(0,0,0,.82);color:#fff;
+    font-size:13px;font-weight:700;padding:8px 14px;border-radius:999px;max-width:calc(100% - 32px);text-align:center}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <div class="tabs" id="tabs" role="group" aria-label="試合モード">
+    <button class="tab" id="tab-main" data-mode="main">本戦<small>90s</small></button>
+    <button class="tab" id="tab-ext90" data-mode="ext90">延長<small>90s</small></button>
+    <button class="tab" id="tab-ext60" data-mode="ext60">延長<small>60s</small></button>
+  </div>
+
+  <div class="clockwrap">
+    <span class="badge" id="badge" hidden>一時停止</span>
+    <div class="clock" id="clock">0:00</div>
+    <div class="remain">残り <b id="remain">1:30</b></div>
+  </div>
+
+  <div>
+    <div class="bar" id="bar"><div class="marker" id="marker"></div></div>
+    <div class="ticks" id="ticks"></div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="phase" id="phase">スタンバイ</div>
+    <div class="act" id="act"></div>
+  </div>
+
+  <div class="recrow">
+    <button class="btn" id="recBtn" aria-pressed="false"><span class="sq"></span><span id="recLabel">録画 OFF</span></button>
+    <div class="recstat" id="recStat">録画はオプション</div>
+  </div>
+
+  <button class="go" id="go"><span id="goLabel">START</span><small id="goSub">始め！</small></button>
+  <button class="reset" id="reset"><span id="resetLabel">RESET（1秒長押し）</span></button>
+</div>
+
+<video class="preview" id="preview" muted playsinline autoplay hidden></video>
+<div class="flash" id="flash"></div>
+<div class="toast" id="toast" hidden></div>
+
+<div class="sheet" id="sheet" hidden>
+  <h2>試合動画を保存</h2>
+  <p id="sheetInfo"></p>
+  <div class="row">
+    <button id="shareBtn">共有 / 写真に保存</button>
+    <a id="dlLink" href="#" download>ダウンロード</a>
+  </div>
+  <button class="ghost" id="closeSheet">閉じる（動画は破棄）</button>
+</div>
+
+<script>
+(() => {
+  const MODES = {
+    main: { dur: 90, phases: [
+      { s:0,  e:20, c:'blue',   name:'様子見' },
+      { s:20, e:50, c:'green',  name:'フェーズ1' },
+      { s:50, e:70, c:'yellow', name:'フェーズ2' },
+      { s:70, e:90, c:'red',    name:'ラッシュ' },
+    ]},
+    ext90: { dur: 90, phases: [
+      { s:0,  e:40, c:'green',  name:'フェーズ1' },
+      { s:40, e:70, c:'yellow', name:'フェーズ2' },
+      { s:70, e:90, c:'red',    name:'ラッシュ' },
+    ]},
+    ext60: { dur: 60, phases: [
+      { s:0,  e:40, c:'orange', name:'フェーズ1&2' },
+      { s:40, e:60, c:'red',    name:'ラッシュ' },
+    ]},
+  };
+
+  const $ = id => document.getElementById(id);
+  const body = document.body;
+  const el = { tabs:$('tabs'), clock:$('clock'), remain:$('remain'), badge:$('badge'), bar:$('bar'), marker:$('marker'),
+    ticks:$('ticks'), stage:$('stage'), phase:$('phase'), act:$('act'),
+    go:$('go'), goLabel:$('goLabel'), goSub:$('goSub'), reset:$('reset'),
+    recBtn:$('recBtn'), recLabel:$('recLabel'), recStat:$('recStat'), preview:$('preview'),
+    flash:$('flash'), toast:$('toast'), sheet:$('sheet'), sheetInfo:$('sheetInfo'), shareBtn:$('shareBtn'),
+    dlLink:$('dlLink'), closeSheet:$('closeSheet') };
+
+  let modeKey = 'main';
+  try { const m = localStorage.getItem('sm-mode'); if (MODES[m]) modeKey = m; } catch(e){}
+
+  // state: 'ready' | 'running' | 'paused' | 'done'
+  let state = 'ready', accMs = 0, startAt = 0, lastPhase = -1, lastSec = -1;
+
+  const fmt = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  const mode = () => MODES[modeKey];
+  const elapsedMs = () => state === 'running' ? accMs + (performance.now() - startAt) : accMs;
+  const vibrate = p => { try { navigator.vibrate && navigator.vibrate(p); } catch(e){} };
+  const phaseIndexAt = sec => { const ph = mode().phases; for (let i = 0; i < ph.length; i++) if (sec < ph[i].e) return i; return ph.length - 1; };
+
+  function toast(msg, ms = 2600){ el.toast.textContent = msg; el.toast.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.toast.hidden = true, ms); }
+  function flash(){ el.flash.classList.remove('go-flash'); void el.flash.offsetWidth; el.flash.classList.add('go-flash'); }
+
+  function buildBar(){
+    const m = mode();
+    el.bar.querySelectorAll('.seg').forEach(n => n.remove());
+    m.phases.forEach(p => { const d = document.createElement('div'); d.className = 'seg'; d.dataset.c = p.c; d.style.width = ((p.e - p.s) / m.dur * 100) + '%'; el.bar.insertBefore(d, el.marker); });
+    const marks = [0, ...m.phases.map(p => p.e)];
+    el.ticks.innerHTML = marks.map(t => `<span style="left:${t / m.dur * 100}%">${fmt(t)}</span>`).join('');
+    [...el.tabs.children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === modeKey)));
+  }
+
+  function render(){
+    const m = mode();
+    const ms = Math.min(elapsedMs(), m.dur * 1000);
+    const sec = Math.floor(ms / 1000);
+    const remainSec = Math.max(0, Math.ceil((m.dur * 1000 - ms) / 1000));
+
+    if (state === 'running' && ms >= m.dur * 1000) return finish();
+
+    el.clock.textContent = fmt(sec);
+    el.remain.textContent = fmt(remainSec);
+    el.marker.style.left = (ms / (m.dur * 1000) * 100) + '%';
+    el.badge.hidden = state !== 'paused';
+    body.dataset.run = state === 'running' ? '1' : '0';
+    body.dataset.paused = state === 'paused' ? '1' : '0';
+    el.tabs.classList.toggle('locked', state === 'running');
+
+    if (state === 'ready'){
+      body.dataset.c = 'idle';
+      el.phase.textContent = 'スタンバイ'; el.phase.classList.add('small');
+      el.act.textContent = m.phases.map(p => p.name).join(' → ');
+      lastPhase = -1;
+    } else if (state === 'done'){
+      body.dataset.c = 'done';
+      el.phase.textContent = '試合終了'; el.phase.classList.remove('small');
+      el.act.textContent = 'ボタンをタップで次の試合へ';
+    } else {
+      const i = phaseIndexAt(sec), p = m.phases[i];
+      if (i !== lastPhase){
+        const changed = lastPhase !== -1;
+        lastPhase = i;
+        body.dataset.c = p.c;
+        el.phase.textContent = p.name; el.phase.classList.remove('small');
+        el.act.textContent = `${fmt(p.s)} – ${fmt(p.e)}`;
+        if (changed && state === 'running'){ vibrate(p.c === 'red' ? [300,120,300,120,300] : [200,100,200]); flash(); }
+      }
+    }
+
+    if (state === 'running'){
+      el.goLabel.textContent = 'PAUSE'; el.goSub.textContent = '止め！';
+    } else if (state === 'paused'){
+      el.goLabel.textContent = 'RESUME'; el.goSub.textContent = '続行！';
+    } else if (state === 'done'){
+      el.goLabel.textContent = 'NEXT'; el.goSub.textContent = '次の試合へ';
+    } else {
+      el.goLabel.textContent = 'START'; el.goSub.textContent = '始め！';
+    }
+
+    if (rec.recording){ const rs = Math.floor((Date.now() - rec.startedAt) / 1000); if (rs !== lastSec){ lastSec = rs; el.recStat.textContent = `REC ${fmt(rs)}`; } }
+  }
+
+  // ---------- 操作 ----------
+  function toggle(){
+    if (!el.sheet.hidden) return;
+    if (state === 'done'){ doReset(); return; }
+    if (state === 'running'){
+      accMs += performance.now() - startAt; state = 'paused'; vibrate(80);
+    } else {
+      const firstStart = state === 'ready';
+      startAt = performance.now(); state = 'running'; vibrate(60);
+      requestWakeLock();
+      if (firstStart) recStart();
+    }
+    render();
+  }
+  function finish(){
+    accMs = mode().dur * 1000; state = 'done';
+    vibrate([500,150,500,150,800]); flash();
+    render(); recStop();
+  }
+  function doReset(){
+    state = 'ready'; accMs = 0; lastPhase = -1; vibrate(40);
+    render(); recStop();
+  }
+  function setMode(k){
+    if (state === 'running'){ toast('試合中はモード変更できません（PAUSE後に切替）'); return; }
+    if (!MODES[k]) return;
+    modeKey = k; try { localStorage.setItem('sm-mode', k); } catch(e){}
+    state = 'ready'; accMs = 0; lastPhase = -1;
+    buildBar(); render();
+  }
+
+  el.tabs.addEventListener('click', e => { const b = e.target.closest('.tab'); if (b) setMode(b.dataset.mode); });
+
+  // START/PAUSE：タッチは指が触れた瞬間に反応
+  let skipClick = false;
+  el.go.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; skipClick = true; toggle(); });
+  el.go.addEventListener('click', () => { if (skipClick){ skipClick = false; return; } toggle(); });
+  el.go.addEventListener('contextmenu', e => e.preventDefault());
+
+  // RESET：1秒長押し
+  let holdT = null;
+  const holdStart = e => { e.preventDefault(); el.reset.classList.add('hold'); holdT = setTimeout(() => { el.reset.classList.remove('hold'); holdT = null; doReset(); }, 1000); };
+  const holdEnd = () => { if (holdT){ clearTimeout(holdT); holdT = null; } el.reset.classList.remove('hold'); };
+  el.reset.addEventListener('pointerdown', holdStart);
+  ['pointerup','pointerleave','pointercancel'].forEach(t => el.reset.addEventListener(t, holdEnd));
+  el.reset.addEventListener('contextmenu', e => e.preventDefault());
+  el.reset.addEventListener('click', () => { if (!holdT && state !== 'ready') toast('RESETは1秒長押し'); });
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && e.target === document.body){ e.preventDefault(); toggle(); }
+  });
+
+  // ---------- Wake Lock ----------
+  let wakeLock = null;
+  async function requestWakeLock(){
+    try { if ('wakeLock' in navigator && !wakeLock){ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch(e){ wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state === 'running') requestWakeLock(); render(); });
+
+  // ---------- 録画（オプション） ----------
+  const rec = { on:false, stream:null, recorder:null, chunks:[], recording:false, startedAt:0, mime:'', url:null, file:null };
+  const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+
+  function setRecUI(){
+    el.recBtn.setAttribute('aria-pressed', String(rec.on));
+    el.recLabel.textContent = rec.on ? '録画 ON' : '録画 OFF';
+    el.recStat.classList.toggle('live', rec.recording);
+    if (!rec.recording) el.recStat.textContent = rec.on ? 'STARTで録画開始' : '録画はオプション';
+  }
+  async function recEnable(){
+    if (!canRecord){ toast('この環境ではカメラを使えません。タイマーはそのまま使えます'); return; }
+    try {
+      try { rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio:true }); }
+      catch(e){ rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false }); }
+      el.preview.srcObject = rec.stream; el.preview.hidden = false;
+      rec.on = true; setRecUI();
+      if (state === 'running' || state === 'paused') recStart();
+    } catch(e){
+      rec.on = false; setRecUI();
+      toast('カメラが許可されませんでした。タイマーはそのまま使えます');
+    }
+  }
+  function recDisable(){
+    if (rec.recording) recStop();
+    if (rec.stream) rec.stream.getTracks().forEach(t => t.stop());
+    rec.stream = null; rec.on = false; el.preview.hidden = true; el.preview.srcObject = null; setRecUI();
+  }
+  function recStart(){
+    if (!rec.on || !rec.stream || rec.recording) return;
+    const types = ['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+    rec.mime = types.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch(e){ return false; } }) || '';
+    try {
+      rec.recorder = new MediaRecorder(rec.stream, rec.mime ? { mimeType: rec.mime } : undefined);
+    } catch(e){ toast('録画を開始できませんでした'); return; }
+    rec.chunks = [];
+    rec.recorder.ondataavailable = ev => { if (ev.data && ev.data.size) rec.chunks.push(ev.data); };
+    rec.recorder.onstop = onRecStopped;
+    rec.recorder.start(1000);
+    rec.recording = true; rec.startedAt = Date.now(); lastSec = -1; setRecUI();
+  }
+  function recStop(){
+    if (rec.recorder && rec.recording){ rec.recording = false; try { rec.recorder.stop(); } catch(e){} setRecUI(); }
+  }
+  function onRecStopped(){
+    if (!rec.chunks.length) return;
+    const type = rec.recorder.mimeType || rec.mime || 'video/webm';
+    const ext = type.includes('mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(rec.chunks, { type });
+    const d = new Date(), p = n => String(n).padStart(2,'0');
+    const name = `secondmaster_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
+    if (rec.url) URL.revokeObjectURL(rec.url);
+    rec.url = URL.createObjectURL(blob);
+    rec.file = new File([blob], name, { type });
+    el.dlLink.href = rec.url; el.dlLink.download = name;
+    el.sheetInfo.textContent = `${name}（${(blob.size/1048576).toFixed(1)} MB）`;
+    el.shareBtn.hidden = !(navigator.canShare && navigator.canShare({ files:[rec.file] }));
+    el.sheet.hidden = false;
+  }
+  el.shareBtn.addEventListener('click', async () => {
+    try { await navigator.share({ files:[rec.file], title:'試合動画' }); } catch(e){ if (e && e.name !== 'AbortError') toast('共有できませんでした。ダウンロードを使ってください'); }
+  });
+  el.closeSheet.addEventListener('click', () => { el.sheet.hidden = true; });
+  el.recBtn.addEventListener('click', () => { rec.on ? recDisable() : recEnable(); });
+  el.preview.addEventListener('click', () => { el.preview.hidden = true; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); });
+  el.recStat.addEventListener('click', () => { if (rec.stream) el.preview.hidden = false; });
+
+  // ---------- 起動 ----------
+  buildBar(); setRecUI(); render();
+  setInterval(render, 100);
+})();
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>
