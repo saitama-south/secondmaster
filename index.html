@@ -88,7 +88,7 @@
   .ticks span:first-child{transform:none} .ticks span:last-child{transform:translateX(-100%)}
 
   /* フェーズ＆コール */
-  .stage{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;cursor:pointer}
+  .stage{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;cursor:pointer}
   .phase{font-family:"Dela Gothic One","M PLUS 1p",sans-serif;font-size:clamp(46px,15vw,96px);line-height:1.1;
     text-wrap:balance;word-break:keep-all;overflow-wrap:anywhere}
   .phase.small{font-size:clamp(28px,9vw,52px)}
@@ -110,7 +110,7 @@
   /* 小：タイマーの右に並べる（タイマーは左に寄せて少し縮める） */
   .top{display:flex;gap:12px;align-items:center}
   .top .clockwrap{flex:1;min-width:0}
-  .preview[data-size="s"]{position:static;width:36vw;max-width:190px;height:auto;max-height:34vh;box-shadow:none;flex:none}
+  .preview[data-size="s"]{position:static;width:34vw;max-width:180px;height:auto;aspect-ratio:3/4;max-height:30vh;object-fit:cover;box-shadow:none;flex:none}
   .top:has(.preview[data-size="s"]:not([hidden])) .clock{font-size:clamp(70px,25vw,150px)}
   .top:has(.preview[data-size="s"]:not([hidden])) .remain{font-size:clamp(20px,6vw,30px)}
   .preview[data-size="l"]{width:calc(100vw - 24px);max-width:616px}
@@ -250,6 +250,18 @@
     [...el.tabs.children].forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === modeKey)));
   }
 
+  // フェーズ名が枠からはみ出さないよう文字サイズを自動調整
+  function fitPhase(){
+    const ph = el.phase; ph.style.fontSize = '';
+    let fs = parseFloat(getComputedStyle(ph).fontSize);
+    const availH = () => el.stage.clientHeight - el.act.offsetHeight - 10;
+    let guard = 60;
+    while (guard-- > 0 && fs > 16 && (ph.scrollHeight > availH() || ph.scrollWidth > el.stage.clientWidth)){
+      fs -= 2; ph.style.fontSize = fs + 'px';
+    }
+  }
+  let lastPhaseText = '';
+
   function render(){
     const m = mode();
     const ms = Math.min(elapsedMs(), m.dur * 1000);
@@ -296,6 +308,8 @@
     } else {
       el.goLabel.textContent = 'START'; el.goSub.textContent = '始め！';
     }
+
+    if (el.phase.textContent !== lastPhaseText){ lastPhaseText = el.phase.textContent; fitPhase(); }
 
     if (rec.recording){ const rs = Math.floor((Date.now() - rec.startedAt) / 1000); if (rs !== lastSec){ lastSec = rs; el.recStat.textContent = `REC ${fmt(rs)}`; } }
   }
@@ -385,7 +399,7 @@
   function recDisable(){
     if (rec.recording) recStop();
     if (rec.stream) rec.stream.getTracks().forEach(t => t.stop());
-    rec.stream = null; rec.on = false; el.preview.hidden = true; el.preview.srcObject = null; setRecUI();
+    rec.stream = null; rec.on = false; el.preview.hidden = true; el.preview.srcObject = null; setRecUI(); requestAnimationFrame(fitPhase);
   }
   function recStart(){
     if (!rec.on || !rec.stream || rec.recording) return;
@@ -426,7 +440,11 @@
   // プレビュー：タップで 大 ⇄ 小
   el.preview.addEventListener('click', () => {
     el.preview.dataset.size = el.preview.dataset.size === 'l' ? 's' : 'l';
+    requestAnimationFrame(fitPhase);
   });
+  el.preview.addEventListener('loadedmetadata', () => requestAnimationFrame(fitPhase));
+  window.addEventListener('resize', () => requestAnimationFrame(fitPhase));
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitPhase);
 
   // ---------- 起動 ----------
   buildBar(); setRecUI(); render();
