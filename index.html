@@ -107,11 +107,12 @@
   .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);height:auto;max-height:52vh;object-fit:contain;
     border-radius:12px;border:3px solid #fff;background:#000;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.45);
     transition:width .2s ease}
-  /* 小：フェーズ名の右に並べる（タイマーに重ならない） */
-  .mid{flex:1;min-height:0;display:flex;gap:12px;align-items:center}
-  .mid .stage{flex:1;min-width:0;align-self:stretch}
-  .preview[data-size="s"]{position:static;width:auto;height:100%;max-height:100%;max-width:48%;box-shadow:none;flex:none}
-  .mid:has(.preview[data-size="s"]:not([hidden])) .phase{font-size:clamp(24px,7.4vw,52px)}
+  /* 小：タイマーの右に並べる（タイマーは左に寄せて少し縮める） */
+  .top{display:flex;gap:12px;align-items:center}
+  .top .clockwrap{flex:1;min-width:0}
+  .preview[data-size="s"]{position:static;width:36vw;max-width:190px;height:auto;max-height:34vh;box-shadow:none;flex:none}
+  .top:has(.preview[data-size="s"]:not([hidden])) .clock{font-size:clamp(70px,25vw,150px)}
+  .top:has(.preview[data-size="s"]:not([hidden])) .remain{font-size:clamp(20px,6vw,30px)}
   .preview[data-size="l"]{width:calc(100vw - 24px);max-width:616px}
   @media (prefers-reduced-motion: reduce){.preview{transition:none}}
 
@@ -155,10 +156,13 @@
     <button class="tab" id="tab-ext60" data-mode="ext60">延長<small>60s</small></button>
   </div>
 
-  <div class="clockwrap">
-    <span class="badge" id="badge" hidden>一時停止</span>
-    <div class="clock" id="clock">0:00</div>
-    <div class="remain">残り <b id="remain">1:30</b></div>
+  <div class="top">
+    <div class="clockwrap">
+      <span class="badge" id="badge" hidden>一時停止</span>
+      <div class="clock" id="clock">0:00</div>
+      <div class="remain">残り <b id="remain">1:30</b></div>
+    </div>
+    <video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
   </div>
 
   <div>
@@ -166,12 +170,9 @@
     <div class="ticks" id="ticks"></div>
   </div>
 
-  <div class="mid">
-    <div class="stage" id="stage">
-      <div class="phase" id="phase">スタンバイ</div>
-      <div class="act" id="act"></div>
-    </div>
-    <video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
+  <div class="stage" id="stage">
+    <div class="phase" id="phase">スタンバイ</div>
+    <div class="act" id="act"></div>
   </div>
 
   <div class="recrow">
