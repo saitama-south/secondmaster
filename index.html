@@ -107,8 +107,11 @@
   .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);height:auto;max-height:52vh;object-fit:contain;
     border-radius:12px;border:3px solid #fff;background:#000;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.45);
     transition:width .2s ease}
-  /* 小：録画ボタンの行に収める（タイマーに重ならない） */
-  .preview[data-size="s"]{position:static;width:auto;height:84px;max-height:none;border-width:2px;border-radius:10px;box-shadow:none;flex:none}
+  /* 小：フェーズ名の右に並べる（タイマーに重ならない） */
+  .mid{flex:1;min-height:0;display:flex;gap:12px;align-items:center}
+  .mid .stage{flex:1;min-width:0;align-self:stretch}
+  .preview[data-size="s"]{position:static;width:auto;height:100%;max-height:100%;max-width:48%;box-shadow:none;flex:none}
+  .mid:has(.preview[data-size="s"]:not([hidden])) .phase{font-size:clamp(24px,7.4vw,52px)}
   .preview[data-size="l"]{width:calc(100vw - 24px);max-width:616px}
   @media (prefers-reduced-motion: reduce){.preview{transition:none}}
 
@@ -163,15 +166,17 @@
     <div class="ticks" id="ticks"></div>
   </div>
 
-  <div class="stage" id="stage">
-    <div class="phase" id="phase">スタンバイ</div>
-    <div class="act" id="act"></div>
+  <div class="mid">
+    <div class="stage" id="stage">
+      <div class="phase" id="phase">スタンバイ</div>
+      <div class="act" id="act"></div>
+    </div>
+    <video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
   </div>
 
   <div class="recrow">
     <button class="btn" id="recBtn" aria-pressed="false"><span class="sq"></span><span id="recLabel">録画 OFF</span></button>
     <div class="recstat" id="recStat">録画はオプション</div>
-    <video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
   </div>
 
   <button class="go" id="go"><span id="goLabel">START</span><small id="goSub">始め！</small></button>
