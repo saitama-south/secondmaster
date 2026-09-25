@@ -100,14 +100,15 @@
     border:2px solid var(--line);border-radius:999px;padding:7px 14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
   .btn .sq{width:10px;height:10px;border-radius:2px;background:currentColor;opacity:.5}
   .btn[aria-pressed="true"] .sq{background:#ff3b3b;opacity:1;border-radius:50%}
-  .recstat{font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+  .recstat{flex:1;font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
   .recstat.live{color:var(--fg)}
   .recstat.live::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b3b;margin-right:6px;animation:pulse 1s infinite}
   @keyframes pulse{50%{opacity:.25}}
   .preview{position:fixed;right:12px;top:calc(env(safe-area-inset-top,0px) + 78px);height:auto;max-height:52vh;object-fit:contain;
     border-radius:12px;border:3px solid #fff;background:#000;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.45);
     transition:width .2s ease}
-  .preview[data-size="s"]{width:34vw;max-width:170px}
+  /* 小：録画ボタンの行に収める（タイマーに重ならない） */
+  .preview[data-size="s"]{position:static;width:auto;height:84px;max-height:none;border-width:2px;border-radius:10px;box-shadow:none;flex:none}
   .preview[data-size="l"]{width:calc(100vw - 24px);max-width:616px}
   @media (prefers-reduced-motion: reduce){.preview{transition:none}}
 
@@ -170,13 +171,13 @@
   <div class="recrow">
     <button class="btn" id="recBtn" aria-pressed="false"><span class="sq"></span><span id="recLabel">録画 OFF</span></button>
     <div class="recstat" id="recStat">録画はオプション</div>
+    <video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
   </div>
 
   <button class="go" id="go"><span id="goLabel">START</span><small id="goSub">始め！</small></button>
   <button class="reset" id="reset"><span id="resetLabel">RESET（1秒長押し）</span></button>
 </div>
 
-<video class="preview" id="preview" data-size="s" muted playsinline autoplay hidden></video>
 <div class="flash" id="flash"></div>
 <div class="toast" id="toast" hidden></div>
 
