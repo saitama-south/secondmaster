@@ -417,12 +417,12 @@
   });
   el.closeSheet.addEventListener('click', () => { el.sheet.hidden = true; });
   el.recBtn.addEventListener('click', () => { rec.on ? recDisable() : recEnable(); });
-  // プレビュー：タップで 小 → 大 → 非表示 → 小 …
+  // プレビュー：大 →（タップ）小 →（タップ）非表示 →（右のREC表示をタップ）大
   el.preview.addEventListener('click', () => {
-    if (el.preview.dataset.size === 's'){ el.preview.dataset.size = 'l'; toast('大きく表示中。もう一度タップで隠す'); }
-    else { el.preview.hidden = true; el.preview.dataset.size = 's'; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); }
+    if (el.preview.dataset.size === 'l'){ el.preview.dataset.size = 's'; }
+    else { el.preview.hidden = true; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); }
   });
-  el.recStat.addEventListener('click', () => { if (rec.stream){ el.preview.dataset.size = 's'; el.preview.hidden = false; } });
+  el.recStat.addEventListener('click', () => { if (rec.stream){ el.preview.dataset.size = 'l'; el.preview.hidden = false; } });
 
   // ---------- 起動 ----------
   buildBar(); setRecUI(); render();
