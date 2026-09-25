@@ -1,5 +1,5 @@
 // 会場の電波が弱くても起動できるようにキャッシュする
-const CACHE = 'secondmaster-v3';
+const CACHE = 'secondmaster-v4';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

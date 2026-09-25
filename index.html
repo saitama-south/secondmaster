@@ -368,7 +368,6 @@
       try { rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio:true }); }
       catch(e){ rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false }); }
       el.preview.srcObject = rec.stream; el.preview.dataset.size = 'l'; el.preview.hidden = false;
-      toast('画角を合わせたらプレビューをタップ（小さく → 隠す）');
       rec.on = true; setRecUI();
       if (state === 'running' || state === 'paused') recStart();
     } catch(e){
@@ -417,12 +416,10 @@
   });
   el.closeSheet.addEventListener('click', () => { el.sheet.hidden = true; });
   el.recBtn.addEventListener('click', () => { rec.on ? recDisable() : recEnable(); });
-  // プレビュー：大 →（タップ）小 →（タップ）非表示 →（右のREC表示をタップ）大
+  // プレビュー：タップで 大 ⇄ 小
   el.preview.addEventListener('click', () => {
-    if (el.preview.dataset.size === 'l'){ el.preview.dataset.size = 's'; }
-    else { el.preview.hidden = true; toast('プレビューを隠しました（録画は継続）。右の表示をタップで再表示'); }
+    el.preview.dataset.size = el.preview.dataset.size === 'l' ? 's' : 'l';
   });
-  el.recStat.addEventListener('click', () => { if (rec.stream){ el.preview.dataset.size = 'l'; el.preview.hidden = false; } });
 
   // ---------- 起動 ----------
   buildBar(); setRecUI(); render();
