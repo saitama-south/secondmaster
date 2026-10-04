@@ -394,7 +394,9 @@
   async function recEnable(){
     if (!canRecord){ toast('この環境ではカメラを使えません。タイマーはそのまま使えます'); return; }
     try {
-      try { rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio:true }); }
+      // 自動音量調整・ノイズ抑制・エコー除去を切る（気合いや歓声で音が割れる原因になる）
+      const audio = { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 };
+      try { rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }, audio }); }
       catch(e){ rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false }); }
       el.preview.srcObject = rec.stream; el.preview.dataset.size = 'l'; el.preview.hidden = false;
       rec.on = true; setRecUI();
@@ -408,12 +410,33 @@
     if (rec.stream) rec.stream.getTracks().forEach(t => t.stop());
     rec.stream = null; rec.on = false; el.preview.hidden = true; el.preview.srcObject = null; setRecUI(); requestAnimationFrame(fitPhase);
   }
+  // 音声にリミッターをかけて、大きな音でも割れないようにする
+  let actx = null;
+  function limitedStream(stream){
+    const at = stream.getAudioTracks()[0];
+    if (!at) return stream;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!actx) actx = new AC({ sampleRate: 48000 });
+      if (actx.state === 'suspended') actx.resume();
+      const src = actx.createMediaStreamSource(new MediaStream([at]));
+      const pre = actx.createGain(); pre.gain.value = 1.0;
+      const comp = actx.createDynamicsCompressor();
+      comp.threshold.value = -10; comp.knee.value = 6; comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.2;
+      const dst = actx.createMediaStreamDestination();
+      src.connect(pre); pre.connect(comp); comp.connect(dst);
+      return new MediaStream([...stream.getVideoTracks(), ...dst.stream.getAudioTracks()]);
+    } catch(e){ return stream; }
+  }
+
   function recStart(){
     if (!rec.on || !rec.stream || rec.recording) return;
     const types = ['video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
     rec.mime = types.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch(e){ return false; } }) || '';
     try {
-      rec.recorder = new MediaRecorder(rec.stream, rec.mime ? { mimeType: rec.mime } : undefined);
+      const opts = { videoBitsPerSecond: 5000000, audioBitsPerSecond: 128000 };
+      if (rec.mime) opts.mimeType = rec.mime;
+      rec.recorder = new MediaRecorder(limitedStream(rec.stream), opts);
     } catch(e){ toast('録画を開始できませんでした'); return; }
     rec.chunks = [];
     rec.recorder.ondataavailable = ev => { if (ev.data && ev.data.size) rec.chunks.push(ev.data); };
@@ -425,11 +448,17 @@
   function recStop(){
     if (rec.recorder && rec.recording){ rec.recording = false; try { rec.recorder.stop(); } catch(e){} setRecUI(); }
   }
-  function onRecStopped(){
+  async function onRecStopped(){
     if (!rec.chunks.length) return;
     const type = rec.recorder.mimeType || rec.mime || 'video/webm';
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
-    const blob = new Blob(rec.chunks, { type });
+    let blob = new Blob(rec.chunks, { type });
+    rec.chunks = [];
+    if (ext === 'mp4'){
+      el.sheetInfo.textContent = '動画を仕上げ中…'; el.shareBtn.hidden = true; el.dlLink.hidden = true; el.sheet.hidden = false;
+      try { blob = await fixMp4(blob); } catch(e){ /* 失敗したら元のまま保存 */ }
+      el.dlLink.hidden = false;
+    }
     const d = new Date(), p = n => String(n).padStart(2,'0');
     const name = `secondmaster_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.${ext}`;
     if (rec.url) URL.revokeObjectURL(rec.url);
@@ -440,6 +469,184 @@
     el.shareBtn.hidden = !(navigator.canShare && navigator.canShare({ files:[rec.file] }));
     el.sheet.hidden = false;
   }
+  // ---------- 録画ファイルの修正：断片化MP4 → 通常のMP4 ----------
+  // ChromeのMediaRecorderが出すMP4は断片化形式で、ヘッダの長さが0になる。
+  // そのため端末のギャラリーで「1秒」「2秒」などと表示される。
+  // 映像・音声データはコピーせず、目次(moov)だけ作り直して通常のMP4にする。
+  async function fixMp4(blob){
+    const rd = async (o, n) => new DataView(await blob.slice(o, o + n).arrayBuffer());
+    const str = (dv, o) => String.fromCharCode(dv.getUint8(o), dv.getUint8(o+1), dv.getUint8(o+2), dv.getUint8(o+3));
+    // 子ボックスの一覧
+    function kids(dv, start, end){
+      const out = []; let o = start;
+      while (o + 8 <= end){
+        let size = dv.getUint32(o), hdr = 8; const type = str(dv, o + 4);
+        if (size === 1){ size = Number(dv.getBigUint64(o + 8)); hdr = 16; }
+        else if (size === 0) size = end - o;
+        if (size < hdr || o + size > end) break;
+        out.push({ type, start: o, size, body: o + hdr, end: o + size });
+        o += size;
+      }
+      return out;
+    }
+    const find = (dv, b, t) => kids(dv, b.body, b.end).find(k => k.type === t);
+
+    // 1) トップレベルを走査（ヘッダだけ読む）
+    const top = []; let off = 0;
+    while (off + 8 <= blob.size){
+      const h = await rd(off, 16);
+      let size = h.getUint32(0), hdr = 8; const type = str(h, 4);
+      if (size === 1){ size = Number(h.getBigUint64(8)); hdr = 16; }
+      else if (size === 0) size = blob.size - off;
+      if (size < hdr) break;
+      top.push({ type, start: off, size, hdr });
+      off += size;
+    }
+    const moovT = top.find(b => b.type === 'moov');
+    if (!moovT || !top.some(b => b.type === 'moof')) return blob; // 断片化していなければそのまま
+
+    const mdv = await rd(moovT.start, moovT.size);
+    const moov = { start: 0, body: 8, end: moovT.size };
+    const mvhd = find(mdv, moov, 'mvhd');
+    const movieTs = mdv.getUint8(mvhd.body) === 1 ? mdv.getUint32(mvhd.body + 20) : mdv.getUint32(mvhd.body + 12);
+    const mvex = find(mdv, moov, 'mvex');
+    const trex = {};
+    if (mvex) for (const k of kids(mdv, mvex.body, mvex.end)) if (k.type === 'trex'){
+      trex[mdv.getUint32(k.body + 4)] = { dur: mdv.getUint32(k.body + 12), size: mdv.getUint32(k.body + 16), flags: mdv.getUint32(k.body + 20) };
+    }
+    const tracks = {};
+    const trakOrder = [];
+    for (const t of kids(mdv, moov.body, moov.end)) if (t.type === 'trak'){
+      const tkhd = find(mdv, t, 'tkhd'); const id = mdv.getUint32(tkhd.body + (mdv.getUint8(tkhd.body) === 1 ? 20 : 12));
+      const mdia = find(mdv, t, 'mdia'); const mdhd = find(mdv, mdia, 'mdhd');
+      const ts = mdv.getUint8(mdhd.body) === 1 ? mdv.getUint32(mdhd.body + 20) : mdv.getUint32(mdhd.body + 12);
+      const hdlr = find(mdv, mdia, 'hdlr'); const minf = find(mdv, mdia, 'minf'); const stbl = find(mdv, minf, 'stbl');
+      tracks[id] = { id, trak: t, tkhd, mdia, mdhd, hdlr, minf, stbl, ts, d: trex[id] || { dur: 0, size: 0, flags: 0 },
+        durs: [], sizes: [], ctos: [], sync: [], chunks: [], firstDts: null, total: 0 };
+      trakOrder.push(id);
+    }
+
+    // 2) moofを読んでサンプル表を作る
+    const mdats = top.filter(b => b.type === 'mdat');
+    for (const mf of top.filter(b => b.type === 'moof')){
+      const dv = await rd(mf.start, mf.size);
+      const moof = { body: 8, end: mf.size };
+      for (const traf of kids(dv, moof.body, moof.end)) if (traf.type === 'traf'){
+        const tfhd = find(dv, traf, 'tfhd'); const fl = dv.getUint32(tfhd.body) & 0xffffff;
+        const id = dv.getUint32(tfhd.body + 4); const T = tracks[id]; if (!T) continue;
+        let p = tfhd.body + 8, base = mf.start;
+        if (fl & 0x1){ base = Number(dv.getBigUint64(p)); p += 8; }
+        if (fl & 0x2) p += 4;
+        let dDur = T.d.dur, dSize = T.d.size, dFlags = T.d.flags;
+        if (fl & 0x8){ dDur = dv.getUint32(p); p += 4; }
+        if (fl & 0x10){ dSize = dv.getUint32(p); p += 4; }
+        if (fl & 0x20){ dFlags = dv.getUint32(p); p += 4; }
+        const tfdt = find(dv, traf, 'tfdt');
+        if (tfdt){
+          const t0 = dv.getUint8(tfdt.body) === 1 ? Number(dv.getBigUint64(tfdt.body + 4)) : dv.getUint32(tfdt.body + 4);
+          if (T.firstDts === null) T.firstDts = t0;
+          else if (T.durs.length){
+            // 断片の間のすき間・重なりを直前サンプルの長さで吸収（音ズレ防止）
+            const gap = t0 - (T.firstDts + T.total), li = T.durs.length - 1;
+            const nd = Math.max(1, T.durs[li] + gap); T.total += nd - T.durs[li]; T.durs[li] = nd;
+          }
+        }
+        let dataPos = base;
+        for (const tr of kids(dv, traf.body, traf.end)) if (tr.type === 'trun'){
+          const ver = dv.getUint8(tr.body), tf = dv.getUint32(tr.body) & 0xffffff;
+          const n = dv.getUint32(tr.body + 4); let q = tr.body + 8;
+          if (tf & 0x1){ dataPos = base + dv.getInt32(q); q += 4; }
+          let firstFlags = null; if (tf & 0x4){ firstFlags = dv.getUint32(q); q += 4; }
+          let runBytes = 0;
+          for (let i = 0; i < n; i++){
+            const du = (tf & 0x100) ? dv.getUint32((q += 4) - 4) : dDur;
+            const sz = (tf & 0x200) ? dv.getUint32((q += 4) - 4) : dSize;
+            let sf = (tf & 0x400) ? dv.getUint32((q += 4) - 4) : dFlags;
+            if (i === 0 && firstFlags !== null) sf = firstFlags;
+            const ct = (tf & 0x800) ? (ver ? dv.getInt32((q += 4) - 4) : dv.getUint32((q += 4) - 4)) : 0;
+            T.durs.push(du); T.sizes.push(sz); T.ctos.push(ct); T.total += du;
+            if (!(sf & 0x10000)) T.sync.push(T.sizes.length);
+            runBytes += sz;
+          }
+          if (n) T.chunks.push({ src: dataPos, n });
+          dataPos += runBytes;
+        }
+      }
+    }
+
+    // 3) 元ファイルのmdat中身を順につなげる → 新しい位置への変換
+    let newBodyLen = 0; const map = [];
+    for (const m of mdats){ const s = m.start + m.hdr, e = m.start + m.size; map.push({ s, e, n: newBodyLen }); newBodyLen += e - s; }
+    const toNew = src => { const m = map.find(r => src >= r.s && src < r.e); return m ? m.n + (src - m.s) : -1; };
+
+    // 4) 新しいmoovを組み立てる
+    const enc = [];
+    const u32 = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+    const u64 = v => { const hi = Math.floor(v / 4294967296), lo = v >>> 0; return [...u32(hi), ...u32(lo)]; };
+    const typ = t => [...t].map(c => c.charCodeAt(0));
+    const box = (t, ...parts) => { const body = parts.flat(Infinity); return [...u32(body.length + 8), ...typ(t), ...body]; };
+    const full = (t, v, f, ...parts) => box(t, [v, (f >> 16) & 255, (f >> 8) & 255, f & 255], ...parts);
+    const raw = (dv, b) => Array.from(new Uint8Array(dv.buffer, dv.byteOffset + b.start, b.size));
+    // durationを書き換えたコピー（mvhd/tkhd/mdhd共通：version0なら+16 or +20 / version1なら+24 or +28）
+    function patchDur(dv, b, durOff0, durOff1, val){
+      const a = raw(dv, b); const v1 = a[8] === 1; const o = 8 + (v1 ? durOff1 : durOff0);
+      const bytes = v1 ? u64(val) : u32(Math.min(val, 0xffffffff));
+      for (let i = 0; i < bytes.length; i++) a[o + i] = bytes[i];
+      return a;
+    }
+    const ftyp = top.find(b => b.type === 'ftyp');
+    const ftypBytes = ftyp ? Array.from(new Uint8Array(await blob.slice(ftyp.start, ftyp.start + ftyp.size).arrayBuffer())) : box('ftyp', typ('isom'), u32(512), typ('isom'), typ('iso2'), typ('avc1'), typ('mp41'));
+
+    function buildMoov(mdatBodyStart){
+      let movieDur = 0; const traks = [];
+      for (const id of trakOrder){
+        const T = tracks[id]; if (!T.sizes.length) continue;
+        const startTs = T.firstDts || 0;
+        const mediaDur = T.total;
+        const offsetMovie = Math.round(startTs * movieTs / T.ts);
+        const trakMovieDur = Math.round(mediaDur * movieTs / T.ts) + offsetMovie;
+        movieDur = Math.max(movieDur, trakMovieDur);
+        // stts
+        const stts = []; for (const d of T.durs){ const l = stts[stts.length - 1]; if (l && l[1] === d) l[0]++; else stts.push([1, d]); }
+        // ctts
+        let cttsBox = [];
+        if (T.ctos.some(c => c !== 0)){
+          const c = []; for (const v of T.ctos){ const l = c[c.length - 1]; if (l && l[1] === v) l[0]++; else c.push([1, v]); }
+          const neg = T.ctos.some(v => v < 0);
+          cttsBox = full('ctts', neg ? 1 : 0, 0, u32(c.length), c.map(([n, v]) => [...u32(n), ...u32(v >>> 0)]));
+        }
+        const stssBox = T.sync.length && T.sync.length < T.sizes.length ? full('stss', 0, 0, u32(T.sync.length), T.sync.map(u32)) : [];
+        const stsz = full('stsz', 0, 0, u32(0), u32(T.sizes.length), T.sizes.map(u32));
+        const stsc = []; T.chunks.forEach((ch, i) => { const l = stsc[stsc.length - 1]; if (!l || l[1] !== ch.n) stsc.push([i + 1, ch.n]); });
+        const offs = T.chunks.map(ch => mdatBodyStart + toNew(ch.src));
+        const big = offs.some(o => o > 0xffffffff);
+        const stco = big ? full('co64', 0, 0, u32(offs.length), offs.map(u64)) : full('stco', 0, 0, u32(offs.length), offs.map(u32));
+        const stsd = find(mdv, T.stbl, 'stsd');
+        const stbl = box('stbl', raw(mdv, stsd), full('stts', 0, 0, u32(stts.length), stts.map(([n, d]) => [...u32(n), ...u32(d)])),
+          cttsBox, stssBox, full('stsc', 0, 0, u32(stsc.length), stsc.map(([f, n]) => [...u32(f), ...u32(n), ...u32(1)])), stsz, stco);
+        const minfKids = kids(mdv, T.minf.body, T.minf.end).filter(k => k.type !== 'stbl').map(k => raw(mdv, k));
+        const minf = box('minf', minfKids, stbl);
+        const mdia = box('mdia', patchDur(mdv, T.mdhd, 16, 24, mediaDur), raw(mdv, T.hdlr), minf);
+        const edts = offsetMovie > 0
+          ? box('edts', full('elst', 0, 0, u32(2), u32(offsetMovie), u32(0xffffffff), u32(0x00010000), u32(Math.round(mediaDur * movieTs / T.ts)), u32(0), u32(0x00010000)))
+          : [];
+        const tkhd = patchDur(mdv, T.tkhd, 20, 28, trakMovieDur);
+        traks.push(box('trak', tkhd, edts, mdia));
+      }
+      const others = kids(mdv, moov.body, moov.end).filter(k => !['mvhd','trak','mvex'].includes(k.type)).map(k => raw(mdv, k));
+      return box('moov', patchDur(mdv, mvhd, 16, 24, movieDur), traks, others);
+    }
+    // moovの長さが確定するまで2回組む（stco値の桁は変わらない）
+    let moovBytes = buildMoov(0);
+    const big = newBodyLen + ftypBytes.length + moovBytes.length + 16 > 0xffffffff;
+    const mdatHdrLen = big ? 16 : 8;
+    moovBytes = buildMoov(ftypBytes.length + moovBytes.length + mdatHdrLen);
+    const mdatHdr = big ? [...u32(1), ...typ('mdat'), ...u64(newBodyLen + 16)] : [...u32(newBodyLen + 8), ...typ('mdat')];
+    const parts = [new Uint8Array(ftypBytes), new Uint8Array(moovBytes), new Uint8Array(mdatHdr)];
+    for (const m of mdats) parts.push(blob.slice(m.start + m.hdr, m.start + m.size));
+    return new Blob(parts, { type: 'video/mp4' });
+  }
+
   el.shareBtn.addEventListener('click', async () => {
     try { await navigator.share({ files:[rec.file], title:'試合動画' }); } catch(e){ if (e && e.name !== 'AbortError') toast('共有できませんでした。ダウンロードを使ってください'); }
   });
