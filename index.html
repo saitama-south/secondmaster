@@ -99,7 +99,14 @@
   .btn{appearance:none;font:inherit;font-weight:700;font-size:14px;color:var(--fg);background:var(--chip);
     border:2px solid var(--line);border-radius:999px;padding:7px 14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}
   .btn .sq{width:10px;height:10px;border-radius:2px;background:currentColor;opacity:.5}
-  .btn[aria-pressed="true"] .sq{background:#ff3b3b;opacity:1;border-radius:50%}
+  .btn[data-st="ready"] .sq{background:#ff3b3b;opacity:1;border-radius:50%}
+  .btn[data-st="rec"]{background:#ff3b3b;border-color:#ff3b3b;color:#fff}
+  .btn[data-st="rec"] .sq{background:#fff;opacity:1}
+  .btn{position:relative;overflow:hidden}
+  .btn > span{position:relative;z-index:1}
+  .btn::after{content:"";position:absolute;inset:0;background:#000;opacity:.35;transform:scaleX(0);transform-origin:left}
+  .btn.hold::after{transform:scaleX(1);transition:transform 1s linear}
+  .btn.ghostbtn{padding-inline:12px;font-size:13px}
   .recstat{flex:1;font-size:13px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
   .recstat.live{color:var(--fg)}
   .recstat.live::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff3b3b;margin-right:6px;animation:pulse 1s infinite}
@@ -176,7 +183,8 @@
   </div>
 
   <div class="recrow">
-    <button class="btn" id="recBtn" aria-pressed="false"><span class="sq"></span><span id="recLabel">録画 OFF</span></button>
+    <button class="btn" id="recBtn" data-st="off"><span class="sq"></span><span id="recLabel">カメラ ON</span></button>
+    <button class="btn ghostbtn" id="camOff" hidden><span>カメラ OFF</span></button>
     <div class="recstat" id="recStat">録画はオプション</div>
   </div>
 
@@ -222,7 +230,7 @@
   const el = { tabs:$('tabs'), clock:$('clock'), remain:$('remain'), badge:$('badge'), bar:$('bar'), marker:$('marker'),
     ticks:$('ticks'), stage:$('stage'), phase:$('phase'), act:$('act'),
     go:$('go'), goLabel:$('goLabel'), goSub:$('goSub'), reset:$('reset'),
-    recBtn:$('recBtn'), recLabel:$('recLabel'), recStat:$('recStat'), preview:$('preview'),
+    recBtn:$('recBtn'), camOff:$('camOff'), recLabel:$('recLabel'), recStat:$('recStat'), preview:$('preview'),
     flash:$('flash'), toast:$('toast'), sheet:$('sheet'), sheetInfo:$('sheetInfo'), shareBtn:$('shareBtn'),
     dlLink:$('dlLink'), closeSheet:$('closeSheet') };
 
@@ -316,26 +324,23 @@
 
   // ---------- 操作 ----------
   function toggle(){
-    if (!el.sheet.hidden) return;
     if (state === 'done'){ doReset(); return; }
     if (state === 'running'){
       accMs += performance.now() - startAt; state = 'paused'; vibrate(80);
     } else {
-      const firstStart = state === 'ready';
       startAt = performance.now(); state = 'running'; vibrate(60);
       requestWakeLock();
-      if (firstStart) recStart();
     }
     render();
   }
   function finish(){
     accMs = mode().dur * 1000; state = 'done';
     vibrate([500,150,500,150,800]); flash();
-    render(); recStop();
+    render();
   }
   function doReset(){
     state = 'ready'; accMs = 0; lastPhase = -1; vibrate(40);
-    render(); recStop();
+    render();
   }
   function setMode(k){
     if (state === 'running'){ toast('試合中はモード変更できません（PAUSE後に切替）'); return; }
@@ -377,11 +382,14 @@
   const rec = { on:false, stream:null, recorder:null, chunks:[], recording:false, startedAt:0, mime:'', url:null, file:null };
   const canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 
+  // 録画ボタン：カメラON → 録画開始 → 録画停止（長押し）。タイマーとは独立
   function setRecUI(){
-    el.recBtn.setAttribute('aria-pressed', String(rec.on));
-    el.recLabel.textContent = rec.on ? '録画 ON' : '録画 OFF';
+    const st = rec.recording ? 'rec' : rec.on ? 'ready' : 'off';
+    el.recBtn.dataset.st = st;
+    el.recLabel.textContent = st === 'rec' ? '録画停止（長押し）' : st === 'ready' ? '録画開始' : 'カメラ ON';
+    el.camOff.hidden = st !== 'ready';
     el.recStat.classList.toggle('live', rec.recording);
-    if (!rec.recording) el.recStat.textContent = rec.on ? 'STARTで録画開始' : '録画はオプション';
+    if (!rec.recording) el.recStat.textContent = rec.on ? '画角OK → 録画開始' : '録画はオプション';
   }
   async function recEnable(){
     if (!canRecord){ toast('この環境ではカメラを使えません。タイマーはそのまま使えます'); return; }
@@ -390,7 +398,6 @@
       catch(e){ rec.stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }, audio:false }); }
       el.preview.srcObject = rec.stream; el.preview.dataset.size = 'l'; el.preview.hidden = false;
       rec.on = true; setRecUI();
-      if (state === 'running' || state === 'paused') recStart();
     } catch(e){
       rec.on = false; setRecUI();
       toast('カメラが許可されませんでした。タイマーはそのまま使えます');
@@ -413,6 +420,7 @@
     rec.recorder.onstop = onRecStopped;
     rec.recorder.start(1000);
     rec.recording = true; rec.startedAt = Date.now(); lastSec = -1; setRecUI();
+    el.preview.dataset.size = 's'; requestAnimationFrame(fitPhase); vibrate(60);
   }
   function recStop(){
     if (rec.recorder && rec.recording){ rec.recording = false; try { rec.recorder.stop(); } catch(e){} setRecUI(); }
@@ -436,7 +444,21 @@
     try { await navigator.share({ files:[rec.file], title:'試合動画' }); } catch(e){ if (e && e.name !== 'AbortError') toast('共有できませんでした。ダウンロードを使ってください'); }
   });
   el.closeSheet.addEventListener('click', () => { el.sheet.hidden = true; });
-  el.recBtn.addEventListener('click', () => { rec.on ? recDisable() : recEnable(); });
+  let recHoldT = null, recHeld = false;
+  el.recBtn.addEventListener('pointerdown', () => {
+    if (!rec.recording) return;
+    recHeld = false; el.recBtn.classList.add('hold');
+    recHoldT = setTimeout(() => { recHoldT = null; recHeld = true; el.recBtn.classList.remove('hold'); recStop(); vibrate(120); }, 1000);
+  });
+  const recHoldEnd = () => { if (recHoldT){ clearTimeout(recHoldT); recHoldT = null; } el.recBtn.classList.remove('hold'); };
+  ['pointerup','pointerleave','pointercancel'].forEach(t => el.recBtn.addEventListener(t, recHoldEnd));
+  el.recBtn.addEventListener('contextmenu', e => e.preventDefault());
+  el.recBtn.addEventListener('click', () => {
+    if (recHeld){ recHeld = false; return; }
+    if (rec.recording){ toast('録画停止は1秒長押し'); return; }
+    rec.on ? recStart() : recEnable();
+  });
+  el.camOff.addEventListener('click', recDisable);
   // プレビュー：タップで 大 ⇄ 小
   el.preview.addEventListener('click', () => {
     el.preview.dataset.size = el.preview.dataset.size === 'l' ? 's' : 'l';
